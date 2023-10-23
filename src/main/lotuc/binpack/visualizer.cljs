@@ -1,18 +1,17 @@
 (ns lotuc.binpack.visualizer
-  (:require ["@react-three/drei" :refer [OrbitControls PivotControls
-                                         GizmoHelper GizmoHelper
-                                         Environment Bounds
-                                         Grid Edges]]
-            ["@react-three/fiber" :refer [Canvas useFrame]]
-            ["leva" :refer [useControls]]
-            ["react" :refer [useRef]]
-            ["react-dom/client" :refer [createRoot]]
-            [clojure.string :as s]
-            [goog.dom :as gdom]
-            [lotuc.binpack.colors :refer [seed-rand-color]]
-            [lotuc.binpack.eb-afit :as eb-afit]
-            [lotuc.binpack.eb-afit-io :as eb-afit-io]
-            [reagent.core :as r]))
+  (:require
+   ["@react-three/drei" :refer [Bounds Edges Environment GizmoHelper
+                                GizmoHelper Grid OrbitControls PivotControls]]
+   ["@react-three/fiber" :refer [Canvas useFrame]]
+   ["leva" :refer [useControls]]
+   ["react" :refer [useRef]]
+   ["react-dom/client" :refer [createRoot]]
+   [clojure.string :as string]
+   [goog.dom :as gdom]
+   [lotuc.binpack.binpack :as binpack]
+   [lotuc.binpack.colors :refer [seed-rand-color]]
+   [lotuc.binpack.eb-afit-io :as eb-afit-io]
+   [reagent.core :as r]))
 
 ;; more test inputs here:
 ;; https://github.com/wknechtel/3d-bin-pack/tree/master/test
@@ -115,6 +114,18 @@
        [:> GizmoHelper {:makeDefault true :alignment "bottom-right" :margin #js [80 80]}
         [:> GizmoHelper {:axisColors #js ["#9d4b4b", "#2f7f4f", "#3b5b9d"] :labelColor "white"}]]])))
 
+(defn build-console-txt [{:keys [pallet-variants running-pallet-variants] :as statistics} elapsed]
+  (when statistics
+   (with-out-str
+     (println "Total variants:" (count pallet-variants))
+     (println "Elapsed Millis:" elapsed)
+     (println "Running variants:")
+     (doseq [[variant-num {:keys [running-layer-thicknesses finished-layer-thicknesses total-layer-thicknesses]}] running-pallet-variants]
+       (println "- Variant: " (get pallet-variants variant-num))
+       (when running-layer-thicknesses
+        (println "  Iterating Layer Thickness:" running-layer-thicknesses))
+       (println "  Finished Iteration:" (str (or finished-layer-thicknesses 0) "/" (or total-layer-thicknesses 0)))))))
+
 (defn app
   []
   (let [eb-afit-txt (r/atom sample-input-txt)
@@ -123,31 +134,40 @@
         txt-type (r/atom "eb-afit-input")
         packed-res (r/atom nil)
         calculating (r/atom false)
+        calculating-progress (r/atom 0)
 
         find-best-pack
         (fn [txt]
           (reset! calculating true)
-          (js/setTimeout
-           #(try (let [i (eb-afit-io/read-input txt)
-                       t0 (js/Date.)
-                       r (eb-afit/find-best-pack i)
-                       t1 (js/Date.)]
-                   (->> (into [(str "ELAPSED TIME: " (- t1 t0) "msec")
-                               (str "PALLET ORIENTATION: " (seq (:pallet-variant r)))
-                               (str "PALLET VOLUME: " (:pallet-volume i))
-                               (str "PERCENTAGE OF PALLET VOLUME USED: " (:percentage-used r) "%")
-                               (str "PACKED NUMBER OF BOXES: " (:packed-number r))
-                               (str "TOTAL NUMBER OF BOXES: " (count (:boxes i)))
-                               (str "FIRST LAYER THICKNESS: " (:first-layer-thickness r))]
-                              (when-some [b (seq (:unpacked r))]
-                                (->> b
-                                     (map (fn [{:keys [label dims]}] (str " " label " " dims)))
-                                     (into ["UNPACKED BOXES:"]))))
-                        (s/join "\n")
-                        (reset! console-txt))
-                   (reset! packed-res r))
-                 (finally (reset! calculating false)))
-           100))
+          (reset! calculating-progress nil)
+          (reset! packed-res nil)
+          (reset! console-txt nil)
+
+          (let [i (eb-afit-io/read-input txt)
+                t0 (js/Date.)]
+            (binpack/find-best-pack
+             i
+             {:on-statistics (fn [p]
+                               (reset! calculating-progress (/ (Math/floor (* 100 (binpack/calc-progress p))) 100.0))
+                               (reset! console-txt (build-console-txt p (- (js/Date.) t0))))
+              :on-result (fn [{:keys [err ok]}]
+                           (reset! calculating false)
+                           (reset! calculating-progress 100)
+                           (let [t1 (js/Date.)]
+                             (->> (into [(str "ELAPSED TIME: " (- t1 t0) "msec")
+                                         (str "PALLET ORIENTATION: " (seq (:pallet-variant ok)))
+                                         (str "PALLET VOLUME: " (:pallet-volume i))
+                                         (str "PERCENTAGE OF PALLET VOLUME USED: " (:percentage-used ok) "%")
+                                         (str "PACKED NUMBER OF BOXES: " (:packed-number ok))
+                                         (str "TOTAL NUMBER OF BOXES: " (count (:boxes i)))
+                                         (str "FIRST LAYER THICKNESS: " (:first-layer-thickness ok))]
+                                        (when-some [b (seq (:unpacked ok))]
+                                          (->> b
+                                               (map (fn [{:keys [label dims]}] (str " " label " " dims)))
+                                               (into ["UNPACKED BOXES:"]))))
+                                  (string/join "\n")
+                                  (reset! console-txt)))
+                           (reset! packed-res ok))})))
 
         render-visualdot
         (fn [txt]
@@ -196,7 +216,7 @@
                      :disabled @calculating
                      :onClick on-button-click}
             (if (= @txt-type "eb-afit-input")
-              (str "Find best pack" (when @calculating " (calculating)"))
+              (str "Find best pack" (when @calculating (str " (calculating " @calculating-progress "%)")))
               "Render boxes")]
            [:pre {:class "h-32 p-1 border-2 border-indigo-600 text-sm overflow-scroll text-emerald-600"}
             @console-txt]]

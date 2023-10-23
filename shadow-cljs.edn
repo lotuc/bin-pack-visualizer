@@ -10,4 +10,9 @@
                       :output-feature-set :es6}
    :output-dir "public/js"
    :asset-path "js"
-   :modules {:main {:init-fn lotuc.binpack.visualizer/start}}}}}
+   :modules {:shared {:entries [lotuc.binpack.binpack]}
+             :main {:init-fn lotuc.binpack.visualizer/start
+                    :depends-on #{:shared}}
+             :binpack_worker {:init-fn lotuc.binpack.binpack-worker/init
+                              :depends-on #{:shared}
+                              :web-worker true}}}}}
