@@ -15,4 +15,5 @@
                     :depends-on #{:shared}}
              :binpack_worker {:init-fn lotuc.binpack.binpack-worker/init
                               :depends-on #{:shared}
-                              :web-worker true}}}}}
+                              :web-worker true}}
+   :build-hooks [(lotuc.build/prepare-static-files)]}}}

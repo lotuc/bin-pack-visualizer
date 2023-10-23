@@ -6,7 +6,7 @@ module.exports = {
   // lot faster
   content: process.env.NODE_ENV == 'production'
     ? ["./public/js/main.js"]
-    : ["./src/main/**/*.cljs", "./public/js/cljs-runtime/*.js"],
+    : ["./src/cljs/**/*.cljs", "./public/js/cljs-runtime/*.js"],
   theme: {
     extend: {
       fontFamily: {
